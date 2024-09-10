@@ -174,6 +174,7 @@ int main(int argc, char *argv[])
 	struct cancomm *canmsg;
 	struct comm_info cinfo;
 	struct sockaddr_un *who;
+	static char server_un_path[128];
 	static struct cmdl_options opts;
 
 	parse_options(argc, argv, &opts);
@@ -186,8 +187,9 @@ int main(int argc, char *argv[])
 	if (unlikely(sigaction(SIGUSR2, &mact, NULL) == -1))
 		fprintf(stderr, "Cannot install signal handler for SIGUSR2\n");
 
+	strcpy(server_un_path, opts.sun_path);
 	usock_me.sun_family = AF_UNIX;
-	strcpy(usock_me.sun_path, opts.sun_path);
+	strcpy(usock_me.sun_path, server_un_path);
 	u_sock = socket(AF_UNIX, SOCK_DGRAM, 0);
 	if (unlikely(u_sock == -1)) {
 		fprintf(stderr, "Cannot create UNIX socket: %d-%s\n",
@@ -265,9 +267,12 @@ int main(int argc, char *argv[])
 			send_can(canmsg, nums-sizeof(struct cancomm), &cans);
 			continue;
 		}
-		WRITE_ONCE(peer.sun_family, 0);
-		memcpy(peer.sun_path, who->sun_path, sizeof(peer.sun_path));
-		WRITE_ONCE(peer.sun_family, AF_UNIX);
+		if (canmsg->iftyp == 0) {
+			WRITE_ONCE(peer.sun_family, 0);
+			memcpy(peer.sun_path, who->sun_path, sizeof(peer.sun_path));
+			WRITE_ONCE(peer.sun_family, AF_UNIX);
+		} else
+			WRITE_ONCE(peer.sun_family, 0);
 	} while (READ_ONCE(stop_flag) == 0);
 
 wait_for_watch:
@@ -280,7 +285,9 @@ wait_for_watch:
 exit_20:
 	free(canmsg);
 exit_15:
-	unlink(usock_me.sun_path);
+	if (unlikely(unlink(server_un_path) == -1))
+		fprintf(stderr, "Unable to remove %s: %d-%s\n",
+				server_un_path, errno, strerror(errno));
 exit_10:
 	close(u_sock);
 	return retv;
