@@ -5,7 +5,8 @@
 
 struct cmdl_options {
 	int debug;
-	const char *sun_path;
+	char sock_dir[76];
+	char sock_nam[32];
 };
 
 struct comm_info {

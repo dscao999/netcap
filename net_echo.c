@@ -2,8 +2,10 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <getopt.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/stat.h>
 #include <linux/if_ether.h>
 #include <errno.h>
 #include <assert.h>
@@ -14,8 +16,9 @@
 
 #define CANBUF_LEN	2000
 
-static const char *default_server = "/var/tmp/can_capture";
-static const char *default_client = "/var/tmp/can_receiver";
+static const char *default_dir = "/var/tmp/cancap";
+static const char *default_server = "can_capture";
+static const char *default_client = "can_receiver";
 
 static int stop_flag = 0;
 
@@ -49,19 +52,107 @@ static void ethernet_packet(struct cancomm *canbuf, int buflen)
 
 }
 
+struct cmdl_options {
+	char sock_dir[76];
+	char sock_svr[32];
+	char sock_cli[32];
+};
+
+static inline const char *getlstr(const struct option *lopts, int c)
+{
+	const struct option *opt;
+
+	for (opt  = lopts; opt->name; opt++)
+		if (opt->val == c)
+			return opt->name;
+	return "unknown";
+}
+
+static void parse_options(int argc, char *argv[], struct cmdl_options *cmdl)
+{
+	int fin = 0, c;
+	extern char *optarg;
+	extern int opterr, optopt;
+	static const struct option lopts[] = {
+		{
+			.name = "sock-dir",
+			.has_arg = 1,
+			.flag = NULL,
+			.val = 'd'
+		},
+		{
+			.name = "sock-server",
+			.has_arg = 1,
+			.flag = NULL,
+			.val = 's'
+		},
+		{
+			.name = "sock-client",
+			.has_arg = 1,
+			.flag = NULL,
+			.val = 'c'
+		},
+		{}
+	};
+	static const char *opts = ":d:s:c:";
+
+	strcpy(cmdl->sock_dir, default_dir);
+	strcpy(cmdl->sock_svr, default_server);
+	strcpy(cmdl->sock_cli, default_client);
+	opterr = 0;
+	do {
+		optopt = 0;
+		c = getopt_long(argc, argv, opts, lopts, NULL);
+		switch(c) {
+		case -1:
+			fin = 1;
+			break;
+		case '?':
+			if (optopt)
+				fprintf(stderr, "Unknown option: -%c\n", (char)optopt);
+			else
+				fprintf(stderr, "Unknown option: --%s\n", argv[optind-1]);
+			break;
+		case ':':
+			fprintf(stderr, "Missing arguments for -%c/--%s\n",
+					(char)optopt, getlstr(lopts, optopt));
+			break;
+		case 'd':
+		       strcpy(cmdl->sock_dir, optarg);
+		       break;
+		case 's':
+		       strcpy(cmdl->sock_svr, optarg);
+		       break;
+		case 'c':
+		       strcpy(cmdl->sock_cli, optarg);
+		       break;
+		default:
+		       fprintf(stderr, "Logic error in parsing options\n");
+		       break;
+		}
+	} while (fin == 0);
+}
+
 int main(int argc, char *argv[])
 {
-	int retv, sockfd, sysret, msglen;
-	const char *server;
+	int retv, sockfd, sysret, msglen, dirlen;
 	struct cancomm *canbuf;
 	struct sigaction mact;
 	struct sockaddr_un skaddr;
-	static char client_un_path[96];
+	struct stat fst;
+	static char un_path[128];
+	static struct cmdl_options opts;
 
 	retv = 0;
-	server = default_server;
-	if (argc > 1)
-		server = argv[1];
+	parse_options(argc, argv, &opts);
+	dirlen = sprintf(un_path, "%s", opts.sock_dir);
+	sysret = stat(un_path, &fst);
+	if (unlikely(sysret == -1)) {
+		fprintf(stderr, "Directory %s is unusable: %d-%s\n",
+				opts.sock_dir, errno, strerror(errno));
+		return errno;
+	}
+
 	memset(&mact, 0, sizeof(mact));
 	mact.sa_handler = sig_handler;
 	if (unlikely(sigaction(SIGINT, &mact, NULL) == -1))
@@ -77,21 +168,22 @@ int main(int argc, char *argv[])
 				errno, strerror(errno));
 		return errno;
 	}
-	sprintf(client_un_path, "%s-%d", default_client, (int)getpid());
+	sprintf(un_path+dirlen, "/%s-%d", opts.sock_cli, (int)getpid());
 	memset(&skaddr, 0, sizeof(skaddr));
 	skaddr.sun_family = AF_UNIX;
-	strcpy(skaddr.sun_path, client_un_path);
+	strcpy(skaddr.sun_path, un_path);
 	sysret = bind(sockfd, (struct sockaddr *)&skaddr, sizeof(skaddr));
 	if (unlikely(sysret == -1)) {
 		fprintf(stderr, "Unable to bind to %s: %d-%s\n", default_client,
 				errno, strerror(errno));
 		goto exit_10;
 	}
-	strcpy(skaddr.sun_path, server);
+	sprintf(un_path+dirlen, "/%s", opts.sock_svr);
+	strcpy(skaddr.sun_path, un_path);
 	sysret = connect(sockfd, (struct sockaddr *)&skaddr, sizeof(skaddr));
 	if (unlikely(sysret == -1)) {
 		fprintf(stderr, "Cannot connect to server socket with path %s: %d-%s\n",
-				server, errno, strerror(errno));
+				un_path, errno, strerror(errno));
 		retv = errno;
 		goto exit_20;
 	}
@@ -144,7 +236,8 @@ int main(int argc, char *argv[])
 exit_30:
 	free(canbuf);
 exit_20:
-	unlink(client_un_path);
+	sprintf(un_path+dirlen, "/%s-%d", opts.sock_cli, (int)getpid());
+	unlink(un_path);
 exit_10:
 	close(sockfd);
 	return retv;

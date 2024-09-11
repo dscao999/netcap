@@ -7,6 +7,7 @@
 #include <getopt.h>
 #include <linux/un.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include "miscs.h"
 #include "list_head.h"
 #include "can_capture.h"
@@ -36,10 +37,23 @@ static inline const char *getlstr(const struct option *lopts, int c)
 	return "unknown";
 }
 
+static const char *default_dir = "/var/tmp/cancap";
+static const char *default_nam = "can_capture";
+
+static char *dirname(char *path)
+{
+	char *last_slash;
+
+	last_slash = strrchr(path, '/');
+	if (unlikely(last_slash == NULL))
+		return last_slash;
+	*last_slash = 0;
+	return path;
+}
+
 static void parse_options(int argc, char *argv[], struct cmdl_options *cmdargs)
 {
 	int fin = 0, c;
-	char *path, *r_path;
 	extern char *optarg;
 	extern int opterr, optopt;
 	static const struct option lopts[] = {
@@ -50,23 +64,24 @@ static void parse_options(int argc, char *argv[], struct cmdl_options *cmdargs)
 			.val = 'd'
 		},
 		{
-			.name = "socket",
+			.name = "sock_dir",
 			.has_arg = 1,
 			.flag = NULL,
-			.val = 'p'
+			.val = 'r'
+		},
+		{
+			.name = "sock_name",
+			.has_arg = 1,
+			.flag = NULL,
+			.val = 'n'
 		},
 		{}
 	};
 	static const char *opts = ":dp:";
 
-	r_path = malloc(128);
-	if (unlikely(!r_path)) {
-		fprintf(stderr, "Out of Memory!\n");
-		exit(ENOMEM);
-	}
-	memset(r_path, 0, 128);
+	strcpy(cmdargs->sock_dir, default_dir);
+	strcpy(cmdargs->sock_nam, default_nam);
 	cmdargs->debug = 0;
-	cmdargs->sun_path = DEFAULT_SOCKET_PATH;
 	opterr = 0;
 	do {
 		optopt = 0;
@@ -88,26 +103,17 @@ static void parse_options(int argc, char *argv[], struct cmdl_options *cmdargs)
 		case 'd':
 			cmdargs->debug += 1;
 			break;
-		case 'p':
-			if (unlikely(strlen(optarg) > 64)) {
-				fprintf(stderr, "Sock Path Too Long: %s ignored\n",
-						optarg);
-				break;
-			}
-			path = realpath(r_path, optarg);
-			if (unlikely(!path && errno != ENOENT)) {
-				fprintf(stderr, "Invalid socket path %s ignored: %s\n",
-						optarg, strerror(errno));
-				break;
-			}
-			cmdargs->sun_path = optarg;
+		case 'r':
+			strcpy(cmdargs->sock_dir, optarg);
+			break;
+		case 'n':
+			strcpy(cmdargs->sock_nam, optarg);
 			break;
 		default:
-			fprintf(stderr, "Logic Error in parse options\n");
+			fprintf(stderr, "Logic Error in parsing options\n");
 			break;
 		}
 	} while (fin == 0);
-	free(r_path);
 }
 
 static void send_can(const struct cancomm *canmsg, int msglen, struct can_list *cans)
@@ -174,10 +180,40 @@ int main(int argc, char *argv[])
 	struct cancomm *canmsg;
 	struct comm_info cinfo;
 	struct sockaddr_un *who;
-	static char server_un_path[128];
+	char *dn;
+	struct stat fst;
+	bool dircrt = false;
+	static char server_un_path[176];
 	static struct cmdl_options opts;
 
 	parse_options(argc, argv, &opts);
+	strcpy(server_un_path, opts.sock_dir);
+	dn = dirname(server_un_path);
+	if (dn) {
+		sysret = stat(dn, &fst);
+		if (unlikely(sysret == -1)) {
+			fprintf(stderr, "Illegal directory %s: %d-%s\n",
+					dn, errno, strerror(errno));
+			exit(errno);
+		}
+	}
+	errno = 0;
+	sysret = stat(opts.sock_dir, &fst);
+	if (sysret == -1 && errno != ENOENT) {
+		fprintf(stderr, "Illegal directory %s: %d-%s\n",
+				opts.sock_dir, errno, strerror(errno));
+		exit(errno);
+	}
+	if (sysret == -1) {
+		sysret = mkdir(opts.sock_dir, 0755);
+		if (unlikely(sysret == -1)) {
+			fprintf(stderr, "Cannot create directory %s: %d-%s\n",
+					opts.sock_dir, errno, strerror(errno));
+			exit(errno);
+		}
+		dircrt = true;
+	}
+
 	memset(&mact, 0, sizeof(mact));
 	mact.sa_handler = sig_handler;
 	if (unlikely(sigaction(SIGINT, &mact, NULL) == -1))
@@ -187,9 +223,8 @@ int main(int argc, char *argv[])
 	if (unlikely(sigaction(SIGUSR2, &mact, NULL) == -1))
 		fprintf(stderr, "Cannot install signal handler for SIGUSR2\n");
 
-	strcpy(server_un_path, opts.sun_path);
+	sprintf(usock_me.sun_path, "%s/%s", opts.sock_dir, opts.sock_nam);
 	usock_me.sun_family = AF_UNIX;
-	strcpy(usock_me.sun_path, server_un_path);
 	u_sock = socket(AF_UNIX, SOCK_DGRAM, 0);
 	if (unlikely(u_sock == -1)) {
 		fprintf(stderr, "Cannot create UNIX socket: %d-%s\n",
@@ -204,6 +239,7 @@ int main(int argc, char *argv[])
 		goto exit_10;
 	} else
 		printf("Listening on socket %s\n", usock_me.sun_path);
+	strcpy(server_un_path, usock_me.sun_path);
 	canmsg = malloc(sizeof(struct cancomm)+MSGBUF_LEN);
 	if (unlikely(!canmsg)) {
 		fprintf(stderr, "Out of Memory!\n");
@@ -290,5 +326,11 @@ exit_15:
 				server_un_path, errno, strerror(errno));
 exit_10:
 	close(u_sock);
+	if (dircrt) {
+	       if (unlikely(rmdir(opts.sock_dir) == -1))
+		       fprintf(stderr, "Unable to remove dir %s: %d-%s\n",
+				       opts.sock_dir,
+				       errno, strerror(errno));
+	}
 	return retv;
 }
