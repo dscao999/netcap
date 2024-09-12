@@ -7,6 +7,7 @@
 #include <sys/un.h>
 #include <sys/stat.h>
 #include <linux/if_ether.h>
+#include <linux/can.h>
 #include <errno.h>
 #include <assert.h>
 #include <signal.h>
@@ -30,6 +31,27 @@ static void sig_handler(int sig)
 
 static inline void can_packet(struct cancomm *canbuf, int buflen)
 {
+	struct can_frame *frame;
+	unsigned int canid;
+	int i;
+
+	frame = (struct can_frame *)canbuf->buf;
+	if (unlikely((frame->can_id & CAN_ERR_FLAG) != 0)) {
+		fprintf(stderr, "An Error CAN frame received\n");
+		return;
+	}
+	if ((frame->can_id & CAN_EFF_FLAG) != 0)
+		canid = (frame->can_id & CAN_EFF_MASK);
+	else
+		canid = (frame->can_id & CAN_SFF_MASK);
+	if (unlikely((frame->can_id & CAN_RTR_FLAG) != 0)) {
+		printf("Remote Request of CAN ID: %8X\n", canid);
+	} else {
+		printf("CAN ID: %8X, Payload Len: %d Data:", canid, frame->len);
+		for (i = 0; i < frame->len; i++)
+			printf(" %02X", frame->data[i]);
+		printf("\n");
+	}
 }
 
 static void ethernet_packet(struct cancomm *canbuf, int buflen)
