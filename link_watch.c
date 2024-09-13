@@ -5,6 +5,7 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <poll.h>
+#include <time.h>
 #include <assert.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -490,9 +491,15 @@ static void *can_capture(void *arg)
 					can->nic.ifidx, errno, strerror(errno));
 			goto exit_20;
 		}
+		sysret = clock_gettime(CLOCK_MONOTONIC_COARSE, &pkt->tm);
+		if (unlikely(sysret == -1))
+			fprintf(stderr, "Unable to get the time stamp " \
+					"for packet: %d-%s\n",
+					errno, strerror(errno));
 		numbs = recv(can->c_sock, pkt->buf, PACKET_LEN, 0);
 		if (unlikely(numbs == -1)) {
-			fprintf(stderr, "Unable to read from capturing socket %d: %d-%s\n",
+			fprintf(stderr, "Unable to read from capturing " \
+					"socket %d: %d-%s\n",
 					can->nic.ifidx, errno, strerror(errno));
 			goto exit_20;
 		}
@@ -503,9 +510,11 @@ static void *can_capture(void *arg)
 			continue;
 		msglen = numbs + sizeof(struct cancomm);
 		numbs = sendto(can->u_sock, (char *)pkt, msglen, 0,
-				(struct sockaddr *)can->peer, sizeof(*can->peer));
+				(struct sockaddr *)can->peer,
+				sizeof(*can->peer));
 		if (unlikely(numbs == -1))
-			fprintf(stderr, "Unable to send captured packets to UNIX socket: %d-%s\n",
+			fprintf(stderr, "Unable to send captured packets to " \
+					"UNIX socket: %d-%s\n",
 					errno, strerror(errno));
 	} while (!READ_ONCE(can->stop_cap));
 

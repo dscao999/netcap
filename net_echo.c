@@ -22,6 +22,7 @@ static const char *default_server = "can_capture";
 static const char *default_client = "can_receiver";
 
 static int stop_flag = 0;
+static struct timespec epcho_start;
 
 static void sig_handler(int sig)
 {
@@ -29,12 +30,29 @@ static void sig_handler(int sig)
 		stop_flag = 1;
 }
 
-static inline void can_packet(struct cancomm *canbuf, int buflen)
+static long usec_timediff(const struct timespec *t0, const struct timespec *t1)
+{
+	long tv_sec, tv_nsec;
+
+	tv_sec = 0;
+	tv_nsec = t1->tv_nsec - t0->tv_nsec;
+	if (tv_nsec < 0) {
+		tv_nsec += 1000000000l;
+		tv_sec -= 1;
+	}
+	tv_sec += (t1->tv_sec - t0->tv_sec);
+	return (tv_sec * 1000000) + (tv_nsec / 1000);
+}
+
+static inline void can_packet(struct cancomm *canbuf, int msglen)
 {
 	struct can_frame *frame;
+	long stamp;
 	unsigned int canid;
 	int i;
 
+	stamp = usec_timediff(&epcho_start, &canbuf->tm);
+	printf("%8ld.%06ld ", (stamp/1000000), (stamp%1000000));
 	frame = (struct can_frame *)canbuf->buf;
 	if (unlikely((frame->can_id & CAN_ERR_FLAG) != 0)) {
 		fprintf(stderr, "An Error CAN frame received\n");
@@ -54,24 +72,26 @@ static inline void can_packet(struct cancomm *canbuf, int buflen)
 	}
 }
 
-static void ethernet_packet(struct cancomm *canbuf, int buflen)
+static void ethernet_packet(struct cancomm *canbuf, int msglen)
 {
 	struct ethhdr *eth;
+	long stamp;
 
 	eth = (struct ethhdr *)canbuf->buf;
-	if (unlikely(buflen < sizeof(struct ethhdr))) {
+	if (unlikely(msglen < sizeof(struct ethhdr))) {
 		fprintf(stderr, "corrupt ethernet packet ignored\n");
 		return;
 	}
-	printf("Etherenet packet type: %d ", be16toh(eth->h_proto));
+	stamp = usec_timediff(&epcho_start, &canbuf->tm);
+	printf("%8ld.%06ld ", (stamp/1000000), (stamp%1000000));
+	printf("Etherenet: %04hX ", be16toh(eth->h_proto));
 	printf("Dest: %02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx ",
 			eth->h_dest[0], eth->h_dest[1], eth->h_dest[2],
 			eth->h_dest[3], eth->h_dest[4], eth->h_dest[5]);
 	printf("Source: %02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx ",
 			eth->h_source[0], eth->h_source[1], eth->h_source[2],
 			eth->h_source[3], eth->h_source[4], eth->h_source[5]);
-	printf("Payload Length: %d\n", buflen - (int)sizeof(struct ethhdr));
-
+	printf("Payload Length: %d\n", msglen - (int)sizeof(struct ethhdr));
 }
 
 struct cmdl_options {
@@ -165,6 +185,7 @@ int main(int argc, char *argv[])
 	static char un_path[128];
 	static struct cmdl_options opts;
 
+	clock_gettime(CLOCK_MONOTONIC_COARSE, &epcho_start);
 	retv = 0;
 	parse_options(argc, argv, &opts);
 	dirlen = sprintf(un_path, "%s", opts.sock_dir);
