@@ -15,7 +15,7 @@
 #include "miscs.h"
 #include "cancomm.h"
 
-#define CANBUF_LEN	2000
+#define CANBUF_LEN	3000
 
 static const char *default_dir = "/var/tmp/cancap";
 static const char *default_server = "can_capture";
@@ -182,10 +182,10 @@ int main(int argc, char *argv[])
 	struct sigaction mact;
 	struct sockaddr_un skaddr;
 	struct stat fst;
+	time_t tm;
 	static char un_path[128];
 	static struct cmdl_options opts;
 
-	clock_gettime(CLOCK_MONOTONIC_COARSE, &epcho_start);
 	retv = 0;
 	parse_options(argc, argv, &opts);
 	dirlen = sprintf(un_path, "%s", opts.sock_dir);
@@ -246,6 +246,9 @@ int main(int argc, char *argv[])
 		retv = errno;
 		goto exit_30;
 	}
+	clock_gettime(CLOCK_MONOTONIC_COARSE, &epcho_start);
+	tm = time(NULL);
+	printf("Begin at %s", ctime(&tm));
 	do {
 		sysret = recv(sockfd, (char *)canbuf, CANBUF_LEN+sizeof(struct cancomm), 0);
 		if (unlikely(sysret == -1)) {
