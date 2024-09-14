@@ -62,7 +62,7 @@ static int parse_nlmsg(struct nlmsghdr *nlmsg, struct nicport *nic)
 		link_name = (char*)RTA_DATA(tb[IFLA_IFNAME]);
 		strcpy(nic->ifname, link_name);
 	}
-	if (ifi->ifi_flags & IFF_UP)
+	if ((ifi->ifi_flags & IFF_UP))
 		updown = 1;
 	else
 		updown = -1;
@@ -335,7 +335,7 @@ int cansock_list_build(struct can_list *cans, struct comm_info *info)
 	int pos, len;
 	FILE *fin;
 	struct can_sock *cansock;
-	int retv = 0;
+	int retv = 0, link_flag;
 
 	netdir = opendir(SYS_NET_DIR);
 	if (unlikely(netdir == NULL)) {
@@ -374,6 +374,24 @@ int cansock_list_build(struct can_list *cans, struct comm_info *info)
 			goto loop;
 		}
 		if (link_type != ETHERNET && link_type != CANBUS)
+			goto loop;
+
+		strcpy(pathbuf+len, "flags");
+		fin = fopen(pathbuf, "r");
+		if (unlikely(!fin)) {
+			fprintf(stderr, "Cannot read file %s: %d, %s\n",
+					pathbuf, errno, strerror(errno));
+			goto loop;
+		}
+		link_flag = 0;
+		sysret = fscanf(fin, "%x", &link_flag);
+		fclose(fin);
+		if (sysret != 1) {
+			fprintf(stderr, "Cannot read link flags: %s\n",
+					pathbuf);
+			goto loop;
+		}
+		if ((link_flag & IFF_UP) == 0)
 			goto loop;
 
 		strcpy(pathbuf+len, "ifindex");
@@ -496,7 +514,7 @@ static void *can_capture(void *arg)
 		numbs = recv(can->c_sock, pkt->buf, PACKET_LEN, 0);
 		if (unlikely(numbs == -1)) {
 			fprintf(stderr, "Unable to read from capturing " \
-					"socket %d: %d-%s\n",
+					"NIC %d: %d-%s\n",
 					can->nic.ifidx, errno, strerror(errno));
 			goto exit_20;
 		}

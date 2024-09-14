@@ -15,6 +15,6 @@ neteco: net_echo.o
 	$(LINK.o) $^ -o $@
 
 clean:
-	rm -f *.o usbcap candet
+	rm -f *.o usbcap candet neteco
 
 -include header-dep.mak
