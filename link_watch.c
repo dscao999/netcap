@@ -444,8 +444,6 @@ exit_10:
 	return retv;
 }
 
-#define PACKET_LEN	2048
-
 static void *can_capture(void *arg)
 {
 	struct can_sock *can = (struct can_sock *)arg;
@@ -485,7 +483,7 @@ static void *can_capture(void *arg)
 				can->nic.ifidx, errno, strerror(errno));
 		goto exit_10;
 	}
-	pkt = malloc(sizeof(struct cancomm)+PACKET_LEN);
+	pkt = malloc(sizeof(struct cancomm)+PACKET_LENGTH);
 	if (unlikely(!pkt)) {
 		fprintf(stderr, "Out of Memory!\n");
 		goto exit_10;
@@ -511,7 +509,7 @@ static void *can_capture(void *arg)
 			fprintf(stderr, "Unable to get the time stamp " \
 					"for packet: %d-%s\n",
 					errno, strerror(errno));
-		numbs = recv(can->c_sock, pkt->buf, PACKET_LEN, 0);
+		numbs = recv(can->c_sock, pkt->buf, PACKET_LENGTH, 0);
 		if (unlikely(numbs == -1)) {
 			fprintf(stderr, "Unable to read from capturing " \
 					"NIC %d: %d-%s\n",

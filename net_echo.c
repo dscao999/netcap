@@ -15,8 +15,6 @@
 #include "miscs.h"
 #include "cancomm.h"
 
-#define CANBUF_LEN	3000
-
 static const char *default_dir = "/var/tmp/cancap";
 static const char *default_server = "can_capture";
 static const char *default_client = "can_receiver";
@@ -230,7 +228,7 @@ int main(int argc, char *argv[])
 		retv = errno;
 		goto exit_20;
 	}
-	canbuf = (struct cancomm *)malloc(sizeof(struct cancomm)+CANBUF_LEN);
+	canbuf = (struct cancomm *)malloc(sizeof(struct cancomm)+PACKET_LENGTH);
 	if (unlikely(!canbuf)) {
 		retv = ENOMEM;
 		fprintf(stderr, "Out of Memory!\n");
@@ -250,7 +248,8 @@ int main(int argc, char *argv[])
 	tm = time(NULL);
 	printf("Begin at %s", ctime(&tm));
 	do {
-		sysret = recv(sockfd, (char *)canbuf, CANBUF_LEN+sizeof(struct cancomm), 0);
+		msglen = sizeof(struct cancomm) + PACKET_LENGTH;
+		sysret = recv(sockfd, (char *)canbuf, msglen, 0);
 		if (unlikely(sysret == -1)) {
 			if (errno == EINTR)
 				continue;
