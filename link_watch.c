@@ -115,9 +115,7 @@ static int link_up(struct watch_param *wparam, const struct nicport *nic)
 	nnode->u_sock = wparam->u_sock;
 	nnode->peer = wparam->peer;
 
-	if (wparam->debug)
-		printf("Link: %s Index: %d\n",
-				nnode->nic.ifname, nnode->nic.ifidx);
+	printf("Link: %s Index: %d up\n", nnode->nic.ifname, nnode->nic.ifidx);
 	wparam->inc += 1;
 	inserted = insert_node(nnode, cans);
 	if (inserted != 0) {
@@ -159,8 +157,7 @@ static void link_down(struct watch_param *wparam, int if_index)
 {
 	struct can_list *cans = wparam->cans;
 
-	if (wparam->debug)
-		printf("Link with Index: %d down\n", if_index);
+	printf("Link with Index: %d down\n", if_index);
 	wparam->dec += 1;
 	del_node(cans, if_index);
 }

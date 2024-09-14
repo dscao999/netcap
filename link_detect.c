@@ -312,8 +312,9 @@ int main(int argc, char *argv[])
 	} while (READ_ONCE(stop_flag) == 0);
 
 wait_for_watch:
-	if (link_watch_stop(wparam) != 0 && opts.debug)
+	if (link_watch_stop(wparam) != 0)
 		printf("Link Up/Down detected.\n");
+	echo_statistics(&cans);
 	canlist_free(&cans);
 
 	printf("Exiting...\n");
