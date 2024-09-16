@@ -14,8 +14,6 @@
 #include "link_watch.h"
 #include "cancomm.h"
 
-#define MSGBUF_LEN	2000
-
 static int stop_flag = 0;
 static int echo_st = 0;
 
@@ -222,6 +220,8 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "Cannot install signal handler for SIGTERM\n");
 	if (unlikely(sigaction(SIGUSR2, &mact, NULL) == -1))
 		fprintf(stderr, "Cannot install signal handler for SIGUSR2\n");
+	if (unlikely(sigaction(SIGUSR1, &mact, NULL) == -1))
+		fprintf(stderr, "Cannot install signal handler for SIGUSR1\n");
 
 	sprintf(usock_me.sun_path, "%s/%s", opts.sock_dir, opts.sock_nam);
 	usock_me.sun_family = AF_UNIX;
@@ -240,7 +240,7 @@ int main(int argc, char *argv[])
 	} else
 		printf("Listening on socket %s\n", usock_me.sun_path);
 	strcpy(server_un_path, usock_me.sun_path);
-	canmsg = malloc(sizeof(struct cancomm)+MSGBUF_LEN);
+	canmsg = malloc(sizeof(struct cancomm)+PACKET_LENGTH);
 	if (unlikely(!canmsg)) {
 		fprintf(stderr, "Out of Memory!\n");
 		retv = ENOMEM;
@@ -280,7 +280,7 @@ int main(int argc, char *argv[])
 	do {
 		peer_len = sizeof(struct sockaddr_un);
 		nums = recvfrom(u_sock, (char *)canmsg,
-				MSGBUF_LEN+sizeof(struct cancomm), 0,
+				PACKET_LENGTH+sizeof(struct cancomm), 0,
 				(struct sockaddr *)who, &peer_len);
 		if (unlikely(READ_ONCE(echo_st) == 1)) {
 			WRITE_ONCE(echo_st, 0);

@@ -81,15 +81,16 @@ static int insert_node(struct can_sock *cansock, struct can_list *cans)
 			break;
 	};
 	if (&node->lnk == &cans->head) {
-		list_add(&cansock->lnk, &cans->head);
 		cansock->stop_cap = false;
 		sysret = pthread_create(&cansock->thid, NULL, can_capture, cansock);
 		if (unlikely(sysret)) {
-			retv = sysret;
+			retv = -sysret;
 			fprintf(stderr, "Unable to create CAN capturing thread: %d-%s\n",
 					sysret, strerror(sysret));
-		} else
+		} else {
+			list_add(&cansock->lnk, &cans->head);
 			retv = 0;
+		}
 	}
 	pthread_mutex_unlock(&cans->mutex);
 	return retv;
@@ -248,10 +249,10 @@ static void *watch_entry(void *arg)
 			retv = parse_nlmsg(nlmsg, &nic);
 			if (retv == 1) {
 				status = link_up(param, &nic);
-				if (status) {
-					param->error = status;
-					goto exit_20;
-				}
+				if (status)
+					fprintf(stderr, "Cannot Add New Link " \
+							" %s to capture\n",
+							nic.ifname);
 			} else if (retv == -1)
 				link_down(param, nic.ifidx);
 			nlmsg = NLMSG_NEXT(nlmsg, numbytes);
@@ -423,10 +424,12 @@ int cansock_list_build(struct can_list *cans, struct comm_info *info)
 		INIT_LIST_HEAD(&cansock->lnk);
 		sysret = insert_node(cansock, cans);
 		if (sysret != 0) {
-			if (sysret < 0)
-				retv = -sysret;
+			fprintf(stderr, "Cannot add link %s to capture\n",
+					cansock->nic.ifname);
+			if (unlikely(sysret > 0))
+				fprintf(stderr, "Duplicate link found. " \
+						"Impossible!\n");
 			free(cansock);
-			goto exit_20;
 		}
 loop:
 		errno = 0;
