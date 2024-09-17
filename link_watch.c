@@ -528,8 +528,8 @@ static void *can_capture(void *arg)
 			continue;
 		}
 		if (unlikely(debug >= 2) && !peer_echoed) {
-			printf("send captured packet to %s\n",
-					can->peer->sun_path);
+			printf("send captured packets of link %d to %s\n",
+					can->nic.ifidx, can->peer->sun_path);
 			peer_echoed = true;
 		}
 		msglen = numbs + sizeof(struct cancomm);
