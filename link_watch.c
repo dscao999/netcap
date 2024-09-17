@@ -23,6 +23,7 @@
 #include "link_watch.h"
 #include "cancomm.h"
 
+extern int debug;
 static const char SYS_NET_DIR[] = "/sys/class/net/";
 
 static void *can_capture(void *arg);
@@ -282,7 +283,6 @@ struct watch_param *link_watch_start(struct can_list *cans,
 	param->u_sock = info->u_sock;
 	param->inc = 0;
 	param->dec = 0;
-	param->debug = info->opts->debug;
 	param->error = 0;
 	param->stop_flag = info->stop_flag;
 	sysret = pthread_create(&param->thid, NULL, watch_entry, param);
@@ -458,6 +458,7 @@ static void *can_capture(void *arg)
 	int sysret, numbs, msglen;
 	struct cancomm *pkt;
 	struct flow_statistics *pst = &can->st;
+	bool peer_echoed = false;
 
 	pst->num_bytes = 0;
 	pst->num_pkts = 0;
@@ -522,8 +523,15 @@ static void *can_capture(void *arg)
 		pst->num_bytes += numbs;
 		pst->num_pkts += 1;
 
-		if (READ_ONCE(can->peer->sun_family) != AF_UNIX)
+		if (READ_ONCE(can->peer->sun_family) != AF_UNIX) {
+			peer_echoed = false;
 			continue;
+		}
+		if (unlikely(debug >= 2) && !peer_echoed) {
+			printf("send captured packet to %s\n",
+					can->peer->sun_path);
+			peer_echoed = true;
+		}
 		msglen = numbs + sizeof(struct cancomm);
 		numbs = sendto(can->u_sock, (char *)pkt, msglen, 0,
 				(struct sockaddr *)can->peer,

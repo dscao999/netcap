@@ -4,7 +4,6 @@
 #include "can_capture.h"
 
 struct cmdl_options {
-	int debug;
 	char sock_dir[76];
 	char sock_nam[32];
 };
@@ -24,7 +23,6 @@ struct watch_param {
 	int u_sock;
 	unsigned short inc;
 	unsigned short dec;
-	unsigned short debug;
 	unsigned short error;
 };
 

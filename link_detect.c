@@ -17,6 +17,8 @@
 static int stop_flag = 0;
 static int echo_st = 0;
 
+int debug = 0;
+
 static void sig_handler(int sig)
 {
 	if (sig == SIGINT || sig == SIGTERM)
@@ -77,9 +79,9 @@ static void parse_options(int argc, char *argv[], struct cmdl_options *cmdargs)
 	};
 	static const char *opts = ":dp:";
 
+	debug = 0;
 	strcpy(cmdargs->sock_dir, default_dir);
 	strcpy(cmdargs->sock_nam, default_nam);
-	cmdargs->debug = 0;
 	opterr = 0;
 	do {
 		optopt = 0;
@@ -99,7 +101,7 @@ static void parse_options(int argc, char *argv[], struct cmdl_options *cmdargs)
 					(char)optopt, getlstr(lopts, optopt));
 			break;
 		case 'd':
-			cmdargs->debug += 1;
+			debug += 1;
 			break;
 		case 'r':
 			strcpy(cmdargs->sock_dir, optarg);
@@ -268,7 +270,7 @@ int main(int argc, char *argv[])
 		WRITE_ONCE(stop_flag, 1);
 		goto wait_for_watch;
 	}
-	if (opts.debug) {
+	if (debug) {
 		printf("CAN watched:\n");
 		pthread_mutex_lock(&cans.mutex);
 		list_for_each_entry(node, &cans.head, lnk)
