@@ -75,6 +75,7 @@ static int insert_node(struct can_sock *cansock, struct can_list *cans)
 {
 	int retv = 1, sysret;
 	struct can_sock *node;
+	bool duplicate = false;
 
 	pthread_mutex_lock(&cans->mutex);
 	list_for_each_entry(node, &cans->head, lnk) {
@@ -92,8 +93,11 @@ static int insert_node(struct can_sock *cansock, struct can_list *cans)
 			list_add(&cansock->lnk, &cans->head);
 			retv = 0;
 		}
-	}
+	} else
+	       duplicate = true;
 	pthread_mutex_unlock(&cans->mutex);
+	if (unlikely(debug >= 3 && duplicate))
+		printf("Try to insert duplicate link %d\n", cansock->nic.ifidx);
 	return retv;
 }
 
@@ -152,7 +156,8 @@ static void del_node(struct can_list *cans, int if_index)
 			fprintf(stderr, "Wait for thread failed: %d-%s\n",
 					sysret, strerror(sysret));
 		free(node);
-	}
+	} else if (unlikely(debug >= 3))
+		printf("Try to delete non-existent link %d\n", if_index);
 }
 
 static void link_down(struct watch_param *wparam, int if_index)
