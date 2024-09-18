@@ -12,6 +12,7 @@
 #include <dirent.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
+#include <linux/can/raw.h>
 #include <net/if.h>
 #include <arpa/inet.h>
 #include <linux/if_packet.h>
@@ -460,7 +461,7 @@ static void *can_capture(void *arg)
 		struct sockaddr_can can;
 	} me;
 	struct pollfd pfd;
-	int sysret, numbs, msglen;
+	int sysret, numbs, msglen, sockfd, setfd;
 	struct cancomm *pkt;
 	struct flow_statistics *pst = &can->st;
 	bool peer_echoed = false;
@@ -468,20 +469,34 @@ static void *can_capture(void *arg)
 	pst->num_bytes = 0;
 	pst->num_pkts = 0;
 	if (can->nic.nictyp == ETHERNET)
-		can->c_sock = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+		sockfd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
 	else if (can->nic.nictyp == CANBUS)
-		can->c_sock = socket(PF_CAN, SOCK_RAW, CAN_RAW);
-	if (unlikely(can->c_sock == -1)) {
+		sockfd = socket(PF_CAN, SOCK_RAW, CAN_RAW);
+	if (unlikely(sockfd == -1)) {
 		fprintf(stderr, "Unable to get a socket for NIC %d-%s: %d-%s\n",
 				can->nic.ifidx, can->nic.ifname,
 				errno, strerror(errno));
 		return NULL;
 	}
+	can->c_sock = sockfd;
 	memset(&me, 0, sizeof(me));
 	if (can->nic.nictyp == ETHERNET) {
 		me.ether.sll_family = AF_PACKET;
 		me.ether.sll_ifindex = can->nic.ifidx;
 	} else if (can->nic.nictyp == CANBUS) {
+		setfd = 1;
+		sysret = setsockopt(sockfd, SOL_CAN_RAW, CAN_RAW_FD_FRAMES,
+				&setfd, sizeof(setfd));
+		if (unlikely(sysret == -1)) {
+			if (likely(errno == ENOPROTOOPT))
+				printf("CAN %d doest not support FD\n",
+						can->nic.ifidx);
+			else
+				fprintf(stderr, "Failed to set CAN %d socket " \
+						"to support FD: %d-%s\n",
+						can->nic.ifidx,
+						errno, strerror(errno));
+		}
 		me.can.can_family = AF_CAN;
 		me.can.can_ifindex = can->nic.ifidx;
 	} else
