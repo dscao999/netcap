@@ -159,7 +159,7 @@ static void echo_statistics(struct can_list *cans)
 	num_pkts = 0;
 	pthread_mutex_lock(&cans->mutex);
 	list_for_each_entry(node, &cans->head, lnk) {
-		printf("Statistics for %s - %d:\n", node->nic.ifname, node->nic.ifidx);
+		printf("Statistics for %d - %16s:\n", node->nic.ifidx, node->nic.ifname);
 		printf("\tNumber of bytes: %lu, Number of packets: %lu\n",
 				node->st.num_bytes, node->st.num_pkts);
 		num_bytes += node->st.num_bytes;
@@ -274,7 +274,8 @@ int main(int argc, char *argv[])
 		printf("CAN watched:\n");
 		pthread_mutex_lock(&cans.mutex);
 		list_for_each_entry(node, &cans.head, lnk)
-			printf("\t%s - idx: %d\n", node->nic.ifname, node->nic.ifidx);
+			printf("\t%d - idx: %s\n",
+					node->nic.ifidx, node->nic.ifname);
 		pthread_mutex_unlock(&cans.mutex);
 	}
 	who = &usock_me;
