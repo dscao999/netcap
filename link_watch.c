@@ -9,6 +9,7 @@
 #include <assert.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <sys/ioctl.h>
 #include <dirent.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
@@ -464,6 +465,7 @@ static void *can_capture(void *arg)
 	int sysret, numbs, msglen, sockfd, setfd;
 	struct cancomm *pkt;
 	struct flow_statistics *pst = &can->st;
+	struct ifreq ifq;
 	bool peer_echoed = false;
 
 	pst->num_bytes = 0;
@@ -507,6 +509,18 @@ static void *can_capture(void *arg)
 				can->nic.ifidx, errno, strerror(errno));
 		goto exit_10;
 	}
+	if (unlikely(debug >= 2)) {
+		memset(&ifq, 0, sizeof(struct ifreq));
+		strcpy(ifq.ifr_name, can->nic.ifname);
+		sysret = ioctl(sockfd, SIOCGIFMTU, &ifq);
+		if (unlikely(sysret == -1)) {
+			fprintf(stderr, "Failed toget MTU for link %d: %d-%s\n",
+					can->nic.ifidx,
+					errno, strerror(errno));
+		} else
+			printf("MTU for link %d: %d\n", can->nic.ifidx, ifq.ifr_mtu);
+	}
+
 	pkt = malloc(sizeof(struct cancomm)+PACKET_LENGTH);
 	if (unlikely(!pkt)) {
 		fprintf(stderr, "Out of Memory!\n");
