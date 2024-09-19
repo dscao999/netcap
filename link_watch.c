@@ -480,6 +480,18 @@ static void *can_capture(void *arg)
 				errno, strerror(errno));
 		return NULL;
 	}
+	memset(&ifq, 0, sizeof(struct ifreq));
+	strcpy(ifq.ifr_name, can->nic.ifname);
+	sysret = ioctl(sockfd, SIOCGIFMTU, &ifq);
+	if (unlikely(sysret == -1))
+		fprintf(stderr, "Failed toget MTU for link %d: %d-%s\n",
+				can->nic.ifidx, errno, strerror(errno));
+	else if (debug >= 2)
+		printf("MTU for link %d: %d\n", can->nic.ifidx, ifq.ifr_mtu);
+	if (can->nic.nictyp == CANBUS &&
+			ifq.ifr_mtu != sizeof(struct canfd_frame))
+		printf("Link %d - %s doest support FD frames\n",
+				can->nic.ifidx, can->nic.ifname);
 	can->c_sock = sockfd;
 	memset(&me, 0, sizeof(me));
 	if (can->nic.nictyp == ETHERNET) {
@@ -490,14 +502,10 @@ static void *can_capture(void *arg)
 		sysret = setsockopt(sockfd, SOL_CAN_RAW, CAN_RAW_FD_FRAMES,
 				&setfd, sizeof(setfd));
 		if (unlikely(sysret == -1)) {
-			if (likely(errno == ENOPROTOOPT))
-				printf("CAN %d doest not support FD\n",
-						can->nic.ifidx);
-			else
-				fprintf(stderr, "Failed to set CAN %d socket " \
-						"to support FD: %d-%s\n",
-						can->nic.ifidx,
-						errno, strerror(errno));
+			fprintf(stderr, "Failed to set CAN %d socket " \
+					"to support FD: %d-%s\n",
+					can->nic.ifidx,
+					errno, strerror(errno));
 		}
 		me.can.can_family = AF_CAN;
 		me.can.can_ifindex = can->nic.ifidx;
@@ -508,17 +516,6 @@ static void *can_capture(void *arg)
 		fprintf(stderr, "Unable to bind to NIC %d: %d-%s\n",
 				can->nic.ifidx, errno, strerror(errno));
 		goto exit_10;
-	}
-	if (unlikely(debug >= 2)) {
-		memset(&ifq, 0, sizeof(struct ifreq));
-		strcpy(ifq.ifr_name, can->nic.ifname);
-		sysret = ioctl(sockfd, SIOCGIFMTU, &ifq);
-		if (unlikely(sysret == -1)) {
-			fprintf(stderr, "Failed toget MTU for link %d: %d-%s\n",
-					can->nic.ifidx,
-					errno, strerror(errno));
-		} else
-			printf("MTU for link %d: %d\n", can->nic.ifidx, ifq.ifr_mtu);
 	}
 
 	pkt = malloc(sizeof(struct cancomm)+PACKET_LENGTH);
