@@ -490,7 +490,7 @@ static void *can_capture(void *arg)
 		printf("MTU for link %d: %d\n", can->nic.ifidx, ifq.ifr_mtu);
 	if (can->nic.nictyp == CANBUS &&
 			ifq.ifr_mtu != sizeof(struct canfd_frame))
-		printf("Link %d - %s doest support FD frames\n",
+		printf("Link %d - %s does not support FD frames\n",
 				can->nic.ifidx, can->nic.ifname);
 	can->c_sock = sockfd;
 	memset(&me, 0, sizeof(me));
