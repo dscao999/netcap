@@ -183,7 +183,7 @@ int main(int argc, char *argv[])
 	struct sockaddr_un *who;
 	char *dn;
 	struct stat fst;
-	bool dircrt = false;
+	bool dircrt = false, exiting = false;
 	static char server_un_path[176];
 	static struct cmdl_options opts;
 
@@ -297,20 +297,21 @@ int main(int argc, char *argv[])
 		}
 		if (unlikely(nums == -1)) {
 			if (errno == EINTR)
-				continue;
+				goto check_for_exit;
 			fprintf(stderr, "recvfrom failed: %d-%s. " \
 					"Cannot receive messages\n",
 					errno, strerror(errno));
+			retv = errno;
 			WRITE_ONCE(stop_flag, 1);
-			continue;
+			goto check_for_exit;
 		}
 		if (unlikely(nums < sizeof(struct cancomm))) {
 			fprintf(stderr, "Corrupt Message Received. Ignored!\n");
-			continue;
+			goto check_for_exit;
 		}
 		if (canmsg->ifidx != 0) {
 			send_can(canmsg, nums-sizeof(struct cancomm), &cans);
-			continue;
+			goto check_for_exit;
 		}
 		if (canmsg->iftyp == 0) {
 			WRITE_ONCE(peer.sun_family, 0);
@@ -318,7 +319,17 @@ int main(int argc, char *argv[])
 			WRITE_ONCE(peer.sun_family, AF_UNIX);
 		} else
 			WRITE_ONCE(peer.sun_family, 0);
-	} while (READ_ONCE(stop_flag) == 0);
+check_for_exit:
+		if (unlikely(READ_ONCE(stop_flag) != 0)) {
+			if (retv || peer.sun_family == 0)
+				exiting = true;
+			else
+				fprintf(stderr, "Client still connected. " \
+						"Kill it first\n");
+			WRITE_ONCE(stop_flag, 0);
+		}
+	} while (!exiting);
+	WRITE_ONCE(stop_flag, 1);
 
 wait_for_watch:
 	if (link_watch_stop(wparam) != 0)

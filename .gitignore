@@ -51,6 +51,7 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
+cscope.files
 usbcap
 candet
 neteco
