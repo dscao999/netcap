@@ -14,6 +14,7 @@
 #include <endian.h>
 #include "miscs.h"
 #include "cancomm.h"
+#include "sock_operation.h"
 
 static const char *default_dir = "/var/tmp/cancap";
 static const char *default_server = "can_capture";
@@ -21,6 +22,8 @@ static const char *default_client = "can_receiver";
 
 static int stop_flag = 0;
 static struct timespec epcho_start;
+
+int debug = 0;
 
 static void sig_handler(int sig)
 {
@@ -132,9 +135,15 @@ static void parse_options(int argc, char *argv[], struct cmdl_options *cmdl)
 			.flag = NULL,
 			.val = 'c'
 		},
+		{
+			.name = "debug",
+			.has_arg = 0,
+			.flag = NULL,
+			.val = 'v'
+		},
 		{}
 	};
-	static const char *opts = ":d:s:c:";
+	static const char *opts = ":d:s:c:v";
 
 	strcpy(cmdl->sock_dir, default_dir);
 	strcpy(cmdl->sock_svr, default_server);
@@ -166,6 +175,9 @@ static void parse_options(int argc, char *argv[], struct cmdl_options *cmdl)
 		case 'c':
 		       strcpy(cmdl->sock_cli, optarg);
 		       break;
+		case 'v':
+		       debug += 1;
+		       break;
 		default:
 		       fprintf(stderr, "Logic error in parsing options\n");
 		       break;
@@ -175,7 +187,7 @@ static void parse_options(int argc, char *argv[], struct cmdl_options *cmdl)
 
 int main(int argc, char *argv[])
 {
-	int retv, sockfd, sysret, msglen, dirlen;
+	int retv, sockfd, sysret, msglen, dirlen, usock_mtu;
 	struct cancomm *canbuf;
 	struct sigaction mact;
 	struct sockaddr_un skaddr;
@@ -209,6 +221,9 @@ int main(int argc, char *argv[])
 				errno, strerror(errno));
 		return errno;
 	}
+	usock_mtu = check_sock_mtu(sockfd);
+	if (unlikely(usock_mtu < 0))
+		goto exit_10;
 	sprintf(un_path+dirlen, "/%s-%d", opts.sock_cli, (int)getpid());
 	memset(&skaddr, 0, sizeof(skaddr));
 	skaddr.sun_family = AF_UNIX;

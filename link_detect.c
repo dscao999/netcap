@@ -13,6 +13,7 @@
 #include "can_capture.h"
 #include "link_watch.h"
 #include "cancomm.h"
+#include "sock_operation.h"
 
 static int stop_flag = 0;
 static int echo_st = 0;
@@ -172,7 +173,7 @@ static void echo_statistics(struct can_list *cans)
 
 int main(int argc, char *argv[])
 {
-	int retv = 0, u_sock, sysret, nums;
+	int retv = 0, u_sock, sysret, nums, usock_mtu;
 	struct watch_param *wparam;
 	struct sigaction mact;
 	struct can_sock *node;
@@ -232,6 +233,11 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "Cannot create UNIX socket: %d-%s\n",
 				errno, strerror(errno));
 		return errno;
+	}
+	usock_mtu = check_sock_mtu(u_sock);
+	if (unlikely(usock_mtu < 0)) {
+		retv = -usock_mtu;
+		goto exit_10;
 	}
 	sysret = bind(u_sock, (const struct sockaddr *)&usock_me, sizeof(usock_me));
 	if (unlikely(sysret == -1)) {

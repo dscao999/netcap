@@ -2,14 +2,20 @@
 #define CANCOMM_DSCAO__
 #include <time.h>
 
-#define PACKET_LENGTH	4096
+#define PACKET_LENGTH	4000
 #define ETHERNET	1
 #define CANBUS		280
+
+struct caninfo {
+	int action;    /* -1 down, 1 up */
+	unsigned int ifidx;
+	unsigned int iftyp;
+} __attribute__((aligned(4)));
 
 struct cancomm {
 	unsigned int ifidx;
 	unsigned int iftyp;
 	struct timespec tm;
-	char buf[];
+	char buf[] __attribute__((aligned(4)));
 };
 #endif  /* CANCOMM_DSCAO__ */
