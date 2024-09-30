@@ -86,10 +86,12 @@ static int insert_node(struct can_sock *cansock, struct can_list *cans)
 	};
 	if (&node->lnk == &cans->head) {
 		cansock->stop_cap = false;
-		sysret = pthread_create(&cansock->thid, NULL, can_capture, cansock);
+		sysret = pthread_create(&cansock->thid, NULL, can_capture,
+				cansock);
 		if (unlikely(sysret)) {
 			retv = -sysret;
-			fprintf(stderr, "Unable to create CAN capturing thread: %d-%s\n",
+			fprintf(stderr, "Unable to create CAN capturing " \
+					"thread: %d-%s\n",
 					sysret, strerror(sysret));
 		} else {
 			list_add(&cansock->lnk, &cans->head);
