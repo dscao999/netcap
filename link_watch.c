@@ -105,6 +105,31 @@ static int insert_node(struct can_sock *cansock, struct can_list *cans)
 	return retv;
 }
 
+static void send_one_nic(int sockfd, struct can_sock *node, int action)
+{
+	struct cancomm *canbuf;
+	struct caninfo *cinfo;
+	int sysret, len;
+
+	len = sizeof(struct cancomm)+sizeof(struct caninfo);
+	canbuf = malloc(len);
+	if (unlikely(!canbuf)) {
+		fprintf(stderr, "Out of Memory\n");
+		return;
+	}
+	canbuf->ifidx = 0;
+	canbuf->iftyp = 5;
+	cinfo = (struct caninfo *)canbuf->buf;
+	cinfo->action = action;
+	cinfo->ifidx = node->nic.ifidx;
+	cinfo->iftyp = node->nic.nictyp;
+	sysret = send(sockfd, canbuf, len, 0);
+	if (unlikely(sysret == -1))
+		fprintf(stderr, "Cannot send link up/down to client: %d-%s\n",
+				errno, strerror(errno));
+	free(canbuf);
+}
+
 static int link_up(struct watch_param *wparam, const struct nicport *nic)
 {
 	int inserted;
@@ -134,11 +159,12 @@ static int link_up(struct watch_param *wparam, const struct nicport *nic)
 		else
 			inserted = 0;
 		free(nnode);
-	}
+	} else
+		send_one_nic(wparam->u_sock, nnode, 1);
 	return inserted;
 }
 
-static void del_node(struct can_list *cans, int if_index)
+static void del_node(struct can_list *cans, int if_index, int usock)
 {
 	struct can_sock *node, *node_s;
 	bool deleted = false;
@@ -155,6 +181,7 @@ static void del_node(struct can_list *cans, int if_index)
 	pthread_mutex_unlock(&cans->mutex);
 	if (deleted) {
 		node->stop_cap = true;
+		send_one_nic(usock, node, -1);
 		sysret = pthread_join(node->thid, NULL);
 		if (unlikely(sysret))
 			fprintf(stderr, "Wait for thread failed: %d-%s\n",
@@ -170,7 +197,7 @@ static void link_down(struct watch_param *wparam, int if_index)
 
 	printf("Link with Index: %d down\n", if_index);
 	wparam->dec += 1;
-	del_node(cans, if_index);
+	del_node(cans, if_index, wparam->u_sock);
 }
 
 #define NLMSG_BUFLEN	8192

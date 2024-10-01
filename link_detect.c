@@ -171,6 +171,48 @@ static void echo_statistics(struct can_list *cans)
 			num_bytes, num_pkts);
 }
 
+static int send_nics(int usock, struct cancomm *canbuf, struct can_list *cans)
+{
+	int retv = 0, msglen, sysret;
+	struct can_sock *node;
+	struct caninfo *cinfo;
+
+	canbuf->ifidx = 0;
+	canbuf->iftyp = 5;
+	msglen = 0;
+	cinfo = (struct caninfo *)canbuf->buf;
+	pthread_mutex_lock(&cans->mutex);
+	list_for_each_entry(node, &cans->head, lnk) {
+		if (unlikely(msglen + sizeof(struct caninfo) > PACKET_LENGTH)) {
+			sysret = send(usock, canbuf,
+					msglen+sizeof(struct cancomm), 0);
+			if (unlikely(sysret == -1)) {
+				fprintf(stderr, "send can info failed: %d-%s\n",
+						errno, strerror(errno));
+				retv = errno;
+				break;
+			}
+			msglen = 0;
+			cinfo = (struct caninfo *)canbuf->buf;
+		}
+		cinfo->action = 1;
+		cinfo->ifidx = node->nic.ifidx;
+		cinfo->iftyp = node->nic.nictyp;
+		msglen += sizeof(struct caninfo);
+		cinfo += 1;
+	}
+	pthread_mutex_unlock(&cans->mutex);
+	if (retv == 0 && msglen > 0) {
+		sysret = send(usock, canbuf, msglen+sizeof(struct cancomm), 0);
+		if (unlikely(sysret == -1)) {
+			fprintf(stderr, "send can info failed: %d-%s\n",
+					errno, strerror(errno));
+			retv = errno;
+		}
+	}
+	return retv;
+}
+
 int main(int argc, char *argv[])
 {
 	int retv = 0, u_sock, sysret, nums, usock_mtu;
@@ -317,6 +359,7 @@ int main(int argc, char *argv[])
 			WRITE_ONCE(peer.sun_family, 0);
 			memcpy(peer.sun_path, who->sun_path, sizeof(peer.sun_path));
 			WRITE_ONCE(peer.sun_family, AF_UNIX);
+			retv = send_nics(u_sock, canmsg, &cans);
 		} else
 			WRITE_ONCE(peer.sun_family, 0);
 check_for_exit:
