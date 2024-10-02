@@ -12,7 +12,10 @@
 #include <assert.h>
 #include <signal.h>
 #include <endian.h>
+#include <stdbool.h>
+#include <pthread.h>
 #include "miscs.h"
+#include "list_head.h"
 #include "cancomm.h"
 #include "sock_operation.h"
 
@@ -21,6 +24,7 @@ static const char *default_server = "can_capture";
 static const char *default_client = "can_receiver";
 
 static int stop_flag = 0;
+static int echo_nics = 0;
 static struct timespec epcho_start;
 
 int debug = 0;
@@ -29,6 +33,8 @@ static void sig_handler(int sig)
 {
 	if (sig == SIGINT || sig == SIGTERM)
 		stop_flag = 1;
+	else if (sig == SIGUSR1 || sig == SIGUSR2)
+		echo_nics = 1;
 }
 
 static long usec_timediff(const struct timespec *t0, const struct timespec *t1)
@@ -185,6 +191,66 @@ static void parse_options(int argc, char *argv[], struct cmdl_options *cmdl)
 	} while (fin == 0);
 }
 
+struct nicinfo {
+	int ifidx;
+	int iftyp;
+	struct list_head lnk;
+};
+
+struct nic_head {
+	struct list_head head;
+	pthread_mutex_t mutex;
+};
+
+struct nic_head nics = {
+	.head = LIST_HEAD_INIT(nics.head),
+	.mutex = PTHREAD_MUTEX_INITIALIZER
+};
+
+static void nic_action(const struct caninfo *cinfos, int len,
+		struct nic_head *nics)
+{
+	struct nicinfo *ninfo, *node;
+	const struct caninfo *info;
+	bool inserted = false;
+
+	for (info = cinfos; len >= sizeof(struct caninfo);
+			info++, len -=sizeof(struct caninfo)) {
+		ninfo = malloc(sizeof(struct nicinfo));
+		if (unlikely(!ninfo)) {
+			fprintf(stderr, "Out of Memory in %s!\n", __func__);
+			break;
+		}
+		ninfo->ifidx = info->ifidx;
+		ninfo->iftyp = info->iftyp;
+
+		pthread_mutex_lock(&nics->mutex);
+		list_for_each_entry(node, &nics->head, lnk) {
+			if (node->ifidx == info->ifidx)
+				break;
+		}
+		if (info->action == -1) {
+			list_del(&node->lnk, &nics->head);
+			if (&node->lnk != &nics->head)
+				free(node);
+			else if (debug)
+				fprintf(stderr, "Try to delete nonexistent " \
+						"node in %s\n", __func__);
+		} else if (info->action == 1 && &node->lnk == &nics->head) {
+			list_add(&ninfo->lnk, &nics->head);
+			inserted = true;
+		} else if (unlikely(info->action == 1 &&
+					&node->lnk != &nics->head))
+			fprintf(stderr, "Try to insert duplicate node in %s\n",
+					__func__);
+		pthread_mutex_unlock(&nics->mutex);
+		if (!inserted)
+			free(ninfo);
+	}
+	if (unlikely(debug && len != 0))
+		fprintf(stderr, "Corrupted NIC info packet\n");
+}
+
 int main(int argc, char *argv[])
 {
 	int retv, sockfd, sysret, msglen, dirlen, usock_mtu;
@@ -213,6 +279,12 @@ int main(int argc, char *argv[])
 				errno, strerror(errno));
 	if (unlikely(sigaction(SIGTERM, &mact, NULL) == -1))
 		fprintf(stderr, "Cannot install handler for SIGINT: %d-%s\n",
+				errno, strerror(errno));
+	if (unlikely(sigaction(SIGUSR1, &mact, NULL) == -1))
+		fprintf(stderr, "Cannot install handler for SIGUSR1: %d-%s\n",
+				errno, strerror(errno));
+	if (unlikely(sigaction(SIGUSR2, &mact, NULL) == -1))
+		fprintf(stderr, "Cannot install handler for SIGUSR2: %d-%s\n",
 				errno, strerror(errno));
 
 	sockfd = socket(AF_UNIX, SOCK_DGRAM, 0);
@@ -274,6 +346,12 @@ int main(int argc, char *argv[])
 		} else if (unlikely(sysret < sizeof(struct cancomm)))
 			assert(0);
 		msglen = sysret - sizeof(struct cancomm);
+		if (canbuf->ifidx == 0) {
+			if (canbuf->iftyp == 5)
+				nic_action((const struct caninfo *)canbuf->buf,
+						msglen, &nics);
+			continue;
+		}
 		if (canbuf->iftyp == ETHERNET)
 			ethernet_packet(canbuf, msglen);
 		else if (canbuf->iftyp == CANBUS)
