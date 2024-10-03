@@ -23,7 +23,6 @@
 #include "miscs.h"
 #include "can_capture.h"
 #include "link_watch.h"
-#include "cancomm.h"
 
 extern int debug;
 static const char SYS_NET_DIR[] = "/sys/class/net/";
@@ -121,9 +120,10 @@ static void send_one_nic(int sockfd, struct can_sock *node, int action)
 	canbuf->iftyp = 5;
 	cinfo = (struct caninfo *)canbuf->buf;
 	cinfo->action = action;
-	cinfo->ifidx = node->nic.ifidx;
-	cinfo->iftyp = node->nic.nictyp;
-	sysret = send(sockfd, canbuf, len, 0);
+	cinfo->nic = node->nic;
+	sysret = sendto(sockfd, canbuf, len, 0,
+			(struct sockaddr *)node->peer,
+			sizeof(struct sockaddr_un));
 	if (unlikely(sysret == -1))
 		fprintf(stderr, "Cannot send link up/down to client: %d-%s\n",
 				errno, strerror(errno));
@@ -499,6 +499,7 @@ static void *can_capture(void *arg)
 
 	pst->num_bytes = 0;
 	pst->num_pkts = 0;
+	sockfd = -1;
 	if (can->nic.nictyp == ETHERNET)
 		sockfd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
 	else if (can->nic.nictyp == CANBUS)

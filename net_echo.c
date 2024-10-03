@@ -192,8 +192,7 @@ static void parse_options(int argc, char *argv[], struct cmdl_options *cmdl)
 }
 
 struct nicinfo {
-	int ifidx;
-	int iftyp;
+	struct nicport nic;
 	struct list_head lnk;
 };
 
@@ -206,6 +205,17 @@ struct nic_head nics = {
 	.head = LIST_HEAD_INIT(nics.head),
 	.mutex = PTHREAD_MUTEX_INITIALIZER
 };
+
+static void echo_nics_info(struct nic_head *nic_head)
+{
+	struct nicinfo *node;
+
+	pthread_mutex_lock(&nic_head->mutex);
+	list_for_each_entry(node, &nic_head->head, lnk)
+		printf("NIC %d, Type %d, Name: %s\n", node->nic.ifidx,
+				node->nic.nictyp, node->nic.ifname);
+	pthread_mutex_unlock(&nic_head->mutex);
+}
 
 static void nic_action(const struct caninfo *cinfos, int len,
 		struct nic_head *nics)
@@ -221,12 +231,11 @@ static void nic_action(const struct caninfo *cinfos, int len,
 			fprintf(stderr, "Out of Memory in %s!\n", __func__);
 			break;
 		}
-		ninfo->ifidx = info->ifidx;
-		ninfo->iftyp = info->iftyp;
+		ninfo->nic = info->nic;
 
 		pthread_mutex_lock(&nics->mutex);
 		list_for_each_entry(node, &nics->head, lnk) {
-			if (node->ifidx == info->ifidx)
+			if (node->nic.ifidx == info->nic.ifidx)
 				break;
 		}
 		if (info->action == -1) {
@@ -339,7 +348,7 @@ int main(int argc, char *argv[])
 		sysret = recv(sockfd, (char *)canbuf, msglen, 0);
 		if (unlikely(sysret == -1)) {
 			if (errno == EINTR)
-				continue;
+				goto check_nic_echo;
 			fprintf(stderr, "Cannot receive from UNIX socket: %d-%s, Aborting\n",
 					errno, strerror(errno));
 			break;
@@ -350,7 +359,7 @@ int main(int argc, char *argv[])
 			if (canbuf->iftyp == 5)
 				nic_action((const struct caninfo *)canbuf->buf,
 						msglen, &nics);
-			continue;
+			goto check_nic_echo;
 		}
 		if (canbuf->iftyp == ETHERNET)
 			ethernet_packet(canbuf, msglen);
@@ -359,6 +368,11 @@ int main(int argc, char *argv[])
 		else 
 			fprintf(stderr, "Unknown NIC type: %u ignored\n", canbuf->iftyp);
 
+check_nic_echo:
+		if (unlikely(READ_ONCE(echo_nics) == 1)) {
+			echo_nics_info(&nics);
+			WRITE_ONCE(echo_nics, 0);
+		}
 	} while (READ_ONCE(stop_flag) == 0);
 	canbuf->ifidx = 0;
 	canbuf->iftyp = 1;

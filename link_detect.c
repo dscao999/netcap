@@ -12,7 +12,6 @@
 #include "list_head.h"
 #include "can_capture.h"
 #include "link_watch.h"
-#include "cancomm.h"
 #include "sock_operation.h"
 
 static int stop_flag = 0;
@@ -171,7 +170,8 @@ static void echo_statistics(struct can_list *cans)
 			num_bytes, num_pkts);
 }
 
-static int send_nics(int usock, struct cancomm *canbuf, struct can_list *cans)
+static int send_nics(int usock, struct cancomm *canbuf, struct can_list *cans,
+		struct sockaddr_un *client)
 {
 	int retv = 0, msglen, sysret;
 	struct can_sock *node;
@@ -184,8 +184,10 @@ static int send_nics(int usock, struct cancomm *canbuf, struct can_list *cans)
 	pthread_mutex_lock(&cans->mutex);
 	list_for_each_entry(node, &cans->head, lnk) {
 		if (unlikely(msglen + sizeof(struct caninfo) > PACKET_LENGTH)) {
-			sysret = send(usock, canbuf,
-					msglen+sizeof(struct cancomm), 0);
+			sysret = sendto(usock, canbuf,
+					msglen+sizeof(struct cancomm), 0,
+					(struct sockaddr *)client,
+					sizeof(struct sockaddr_un));
 			if (unlikely(sysret == -1)) {
 				fprintf(stderr, "send can info failed: %d-%s\n",
 						errno, strerror(errno));
@@ -196,14 +198,15 @@ static int send_nics(int usock, struct cancomm *canbuf, struct can_list *cans)
 			cinfo = (struct caninfo *)canbuf->buf;
 		}
 		cinfo->action = 1;
-		cinfo->ifidx = node->nic.ifidx;
-		cinfo->iftyp = node->nic.nictyp;
+		cinfo->nic = node->nic;
 		msglen += sizeof(struct caninfo);
 		cinfo += 1;
 	}
 	pthread_mutex_unlock(&cans->mutex);
 	if (retv == 0 && msglen > 0) {
-		sysret = send(usock, canbuf, msglen+sizeof(struct cancomm), 0);
+		sysret = sendto(usock, canbuf, msglen+sizeof(struct cancomm), 0,
+				(struct sockaddr *)client,
+				sizeof(struct sockaddr_un));
 		if (unlikely(sysret == -1)) {
 			fprintf(stderr, "send can info failed: %d-%s\n",
 					errno, strerror(errno));
@@ -359,7 +362,7 @@ int main(int argc, char *argv[])
 			WRITE_ONCE(peer.sun_family, 0);
 			memcpy(peer.sun_path, who->sun_path, sizeof(peer.sun_path));
 			WRITE_ONCE(peer.sun_family, AF_UNIX);
-			retv = send_nics(u_sock, canmsg, &cans);
+			retv = send_nics(u_sock, canmsg, &cans, &peer);
 		} else
 			WRITE_ONCE(peer.sun_family, 0);
 check_for_exit:

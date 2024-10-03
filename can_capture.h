@@ -5,6 +5,7 @@
 #include <linux/un.h>
 #include <net/if.h>
 #include "list_head.h"
+#include "cancomm.h"
 
 #define SUN_PATH_LEN	108
 #define CAN_TYPE	280
@@ -18,12 +19,6 @@ struct can_list {
 struct flow_statistics {
 	unsigned long num_bytes;
 	unsigned long num_pkts;
-};
-
-struct nicport {
-	int ifidx;
-	int nictyp;
-	char ifname[IF_NAMESIZE];
 };
 
 struct can_sock {
