@@ -14,6 +14,7 @@
 #include <endian.h>
 #include <stdbool.h>
 #include <pthread.h>
+#include <poll.h>
 #include "miscs.h"
 #include "list_head.h"
 #include "cancomm.h"
@@ -260,6 +261,41 @@ static void nic_action(const struct caninfo *cinfos, int len,
 		fprintf(stderr, "Corrupted NIC info packet\n");
 }
 
+static void drain_packets(int sockfd, struct cancomm *canbuf)
+{
+	struct pollfd mfd;
+	int sysret;
+	unsigned long drained = 0;
+
+	if (unlikely(debug))
+		printf("Draining out server packets now\n");
+
+	mfd.fd = sockfd;
+	mfd.events = POLLIN;
+	do {
+		mfd.revents = 0;
+		sysret = poll(&mfd, 1, 500);
+		if (unlikely(sysret == -1)) {
+			if (errno == EINTR)
+				continue;
+			fprintf(stderr, "poll failed at %s: %d-%s\n", __func__,
+					errno, strerror(errno));
+			break;
+		} else if (sysret == 0)
+			break;
+		sysret = recv(sockfd, (void *)canbuf,
+				sizeof(struct cancomm)+PACKET_LENGTH, 0);
+		if (unlikely(sysret == -1)) {
+			fprintf(stderr, "recv failed at %s: %d-%s\n", __func__,
+					errno, strerror(errno));
+			break;
+		}
+		drained += sysret;
+	} while (1);
+	if (unlikely(debug))
+		printf("%ld number of bytes drained\n", drained);
+}
+
 int main(int argc, char *argv[])
 {
 	int retv, sockfd, sysret, msglen, dirlen, usock_mtu;
@@ -383,6 +419,7 @@ check_nic_echo:
 				errno, strerror(errno));
 		retv = errno;
 	}
+	drain_packets(sockfd, canbuf);
 	printf("Exiting...\n");
 
 exit_30:
